@@ -1,6 +1,29 @@
-from typing import List
+from typing import List, Optional
 from rdkit import Chem
-from assembly_python.core.graph import Graph
+import networkx as nx
+from assembly_python.utils.graph import Graph
+from enum import Enum
+from assembly_python.utils.graph import EdgeType
+
+class EdgeType(Enum):
+    SINGLE = "single"
+    DOUBLE = "double" 
+    TRIPLE = "triple"
+    AROMATIC = "aromatic"
+    
+    @staticmethod
+    def from_rdkit_bond(bond: Chem.Bond) -> 'EdgeType':
+        """Convert RDKit bond type to our EdgeType."""
+        if bond.GetBondType() == Chem.BondType.SINGLE:
+            return EdgeType.SINGLE
+        elif bond.GetBondType() == Chem.BondType.DOUBLE:
+            return EdgeType.DOUBLE
+        elif bond.GetBondType() == Chem.BondType.TRIPLE:
+            return EdgeType.TRIPLE
+        elif bond.GetBondType() == Chem.BondType.AROMATIC:
+            return EdgeType.AROMATIC
+        else:
+            raise ValueError(f"Unsupported bond type: {bond.GetBondType()}")
 
 class MoleculeHandler:
     """
@@ -26,10 +49,10 @@ class MoleculeHandler:
     
     @staticmethod
     def from_mol_file(file_path: str, sanitize: bool = True) -> Graph:
-        """Read MOL file and convert to Graph."""
-        mol = Chem.SDMolSupplier(file_path, sanitize=sanitize)[0]
+        """Read mol file and convert to Graph."""
+        mol = Chem.MolFromMolFile(file_path, sanitize=sanitize)
         if mol is None:
-            raise ValueError(f"Failed to read MOL file: {file_path}")
+            raise ValueError(f"Failed to read mol file: {file_path}")
         return MoleculeHandler._mol_to_graph(mol)
     
     @staticmethod
@@ -66,30 +89,18 @@ class MoleculeHandler:
         # Get vertices (atoms)
         vertices = list(range(mol.GetNumAtoms()))
         
-        # Get edges (bonds)
+        # Get vertex colors (atom types)
+        vertex_colors = [atom.GetSymbol() for atom in mol.GetAtoms()]
+        
+        # Get edges and edge colors
         edges = []
         edge_colors = []
         for bond in mol.GetBonds():
             begin_idx = bond.GetBeginAtomIdx()
             end_idx = bond.GetEndAtomIdx()
             edges.append((begin_idx, end_idx))
+            edge_colors.append(EdgeType.from_rdkit_bond(bond).value)
             
-            # Convert bond type to string representation
-            bond_type = str(bond.GetBondType())
-            if bond_type == "SINGLE":
-                edge_colors.append("single")
-            elif bond_type == "DOUBLE":
-                edge_colors.append("double")
-            elif bond_type == "TRIPLE":
-                edge_colors.append("triple")
-            elif bond_type == "AROMATIC":
-                edge_colors.append("aromatic")
-            else:
-                edge_colors.append("unknown")
-        
-        # Get vertex colors (atom types)
-        vertex_colors = [atom.GetSymbol() for atom in mol.GetAtoms()]
-        
         return Graph(
             vertices=vertices,
             edges=edges,

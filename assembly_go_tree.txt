@@ -1,0 +1,61 @@
+/content/assembly_go
+├── cmd
+│   └── app
+│       └── main.go
+├── go.mod
+├── go.sum
+├── LICENSE
+├── pkg
+│   ├── assembly
+│   │   ├── allsubgraphs.go
+│   │   ├── allsubgraphs_test.go
+│   │   ├── assemblycommon.go
+│   │   ├── assemblycommon_test.go
+│   │   ├── assemblyparallel.go
+│   │   ├── assemblyparallel_test.go
+│   │   ├── assemblyserial.go
+│   │   ├── assemblyserial_test.go
+│   │   ├── canonical.go
+│   │   ├── canonical_test.go
+│   │   ├── graphsplit.go
+│   │   ├── graphsplit_test.go
+│   │   ├── graphstruct.go
+│   │   ├── graphstruct_test.go
+│   │   ├── logger.go
+│   │   ├── molecules.go
+│   │   ├── molecules_test.go
+│   │   └── testdata
+│   │       ├── aspirin.mol.txt
+│   │       ├── graphs
+│   │       │   ├── a_test_1.txt
+│   │       │   ├── a_test_2.txt
+│   │       │   ├── chain16.txt
+│   │       │   ├── edge_colour_fail_test.txt
+│   │       │   ├── fish_graph_remnant.txt
+│   │       │   ├── fish_graph_split1.txt
+│   │       │   ├── fish_graph_split2.txt
+│   │       │   ├── fish_graph.txt
+│   │       │   ├── hexagon.txt
+│   │       │   ├── nine_grid.txt
+│   │       │   ├── not_square.txt
+│   │       │   ├── square_coloured_isomorphic.txt
+│   │       │   ├── square_coloured_relabeled.txt
+│   │       │   ├── square_coloured.txt
+│   │       │   ├── square_isomorph.txt
+│   │       │   ├── square.txt
+│   │       │   ├── triangle_bk_x.txt
+│   │       │   ├── triangle.txt
+│   │       │   └── two_joined_squares.txt
+│   │       ├── pathways
+│   │       │   ├── square_starting_pathway.txt
+│   │       │   └── test_pathway.txt
+│   │       └── test_mols
+│   └── helpers
+│       ├── helpers.go
+│       ├── helpers_test.go
+│       ├── logs.txt
+│       └── testdata
+│           └── tmp.txt
+└── ReadMe.md
+
+10 directories, 48 files

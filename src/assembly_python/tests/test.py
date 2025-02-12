@@ -1,53 +1,64 @@
 from assembly_python.utils.molecules import MoleculeHandler
-from assembly_python.core.graph import Graph
-from assembly_python.core.canonical import graph_is_isomorphic
+from assembly_python.utils.graph import Graph
+from assembly_python.algorithms.canonical import graph_is_isomorphic
 
 def test_isomorphism():
-    """Test graph isomorphism with simple examples."""
-    # Create two isomorphic graphs (square with different labelings)
+    # Test 1: Simple path graphs with same colors
     g1 = Graph(
-        vertices=[1, 2, 3, 4],
-        edges=[(1, 2), (2, 3), (3, 4), (4, 1)],
-        vertex_colors=["C", "C", "C", "C"],
-        edge_colors=["single"] * 4
+        vertices=[0, 1, 2],
+        edges=[(0, 1), (1, 2)],
+        vertex_colors=['C', 'C', 'C'],
+        edge_colors=['single', 'double']
     )
-    
+
     g2 = Graph(
-        vertices=[2, 3, 4, 1],
-        edges=[(2, 3), (3, 4), (4, 1), (1, 2)],
-        vertex_colors=["C", "C", "C", "C"],
-        edge_colors=["single"] * 4
+        vertices=[5, 6, 7],
+        edges=[(5, 6), (6, 7)],
+        vertex_colors=['C', 'C', 'C'],
+        edge_colors=['single', 'double']
     )
-    
-    # Create non-isomorphic graph (different structure)
+
+    print("Test 1 - Same colored paths:", graph_is_isomorphic(g1, g2))  # True
+
+    # Test 2: Different vertex colors
     g3 = Graph(
-        vertices=[1, 2, 3, 4],
-        edges=[(1, 2), (2, 3), (3, 4)],  # Missing one edge
-        vertex_colors=["C", "C", "C", "C"],
-        edge_colors=["single"] * 3
+        vertices=[0, 1, 2],
+        edges=[(0, 1), (1, 2)],
+        vertex_colors=['C', 'O', 'C'],
+        edge_colors=['single', 'double']
     )
-    
-    # Test isomorphism
-    print("Testing graph isomorphism:")
-    print(f"g1 and g2 isomorphic: {graph_is_isomorphic(g1, g2)}")  # Should be True
-    print(f"g1 and g3 isomorphic: {graph_is_isomorphic(g1, g3)}")  # Should be False
-    
-    # Test with colored graphs
+
+    print("Test 2 - Different colors:", graph_is_isomorphic(g1, g3))  # False
+
+    # Test 3: Same colors and isomorphic topology (path vs. star are isomorphic for 3 nodes)
     g4 = Graph(
-        vertices=[1, 2, 3, 4],
-        edges=[(1, 2), (2, 3), (3, 4), (4, 1)],
-        vertex_colors=["C", "N", "C", "N"],  # Alternating C/N colors
-        edge_colors=["single"] * 4
+        vertices=[0, 1, 2],
+        edges=[(0, 1), (0, 2)],
+        vertex_colors=['C', 'C', 'C'],
+        edge_colors=['single', 'double']
     )
-    
+
+    print("Test 3 - Different but isomorphic topology:", graph_is_isomorphic(g1, g4))  # True
+
+    # Test 4: Same structure and colors in different order
     g5 = Graph(
-        vertices=[2, 3, 4, 1],
-        edges=[(2, 3), (3, 4), (4, 1), (1, 2)],
-        vertex_colors=["N", "C", "N", "C"],  # Same pattern, different ordering
-        edge_colors=["single"] * 4
+        vertices=[7, 8, 9],
+        edges=[(8, 7), (9, 8)],
+        vertex_colors=['C', 'C', 'C'],
+        edge_colors=['double', 'single']
     )
-    
-    print(f"g4 and g5 isomorphic: {graph_is_isomorphic(g4, g5)}")  # Should be True
+
+    print("Test 4 - Reversed edges:", graph_is_isomorphic(g1, g5))  # True
+
+    # Test 5: Cyclic vs linear (non-isomorphic)
+    g6 = Graph(
+        vertices=[0, 1, 2],
+        edges=[(0, 1), (1, 2), (2, 0)],
+        vertex_colors=['C', 'C', 'C'],
+        edge_colors=['single', 'double', 'single']
+    )
+
+    print("Test 5 - Cyclic vs linear:", graph_is_isomorphic(g1, g6))  # False
 
 def test_molecule_handler():
     """Test the MoleculeHandler with various inputs."""
@@ -116,6 +127,7 @@ M  END"""
         print(f"Edge colors: {graph.edge_colors}")
     except ValueError as e:
         print(f"Error: {e}")
+
 
 if __name__ == "__main__":
     test_molecule_handler()
