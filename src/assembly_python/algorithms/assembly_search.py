@@ -16,12 +16,17 @@ def pathway_steps_saved(pathway: Pathway, edge_mode: bool = True) -> int:
     return steps_saved
 
 def assembly_index(pathway: Pathway, original_graph: Graph) -> int:
-    """Calculate assembly index for a pathway."""
-    # Start with minimum steps needed (total bonds - 1)
-    index = len(original_graph.edges) - 1
-    # Subtract steps saved through fragment reuse
-    index -= pathway_steps_saved(pathway, True)
-    return index
+    """Calculate assembly index matching Go implementation."""
+    # Count bonds in remnant
+    remnant_bonds = len(pathway.remnant.edges)
+    
+    # Count bonds in pathway fragments
+    pathway_bonds = sum(len(fragment.edges) for fragment in pathway.pathway)
+    
+    # Calculate duplicated bonds
+    duplicated_bonds = sum(len(dup) for dup in pathway.duplicates)
+    
+    return remnant_bonds + pathway_bonds - duplicated_bonds - 1
 
 def max_steps_saved(pathway: Pathway) -> int:
     """Calculate maximum possible additional steps that could be saved."""

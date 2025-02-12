@@ -85,22 +85,29 @@ class MoleculeHandler:
 
     @staticmethod
     def _mol_to_graph(mol: Chem.Mol) -> Graph:
-        """Convert RDKit Mol object to our Graph structure."""
-        # Get vertices (atoms)
+        """Convert RDKit Mol object to Graph matching Go implementation."""
         vertices = list(range(mol.GetNumAtoms()))
-        
-        # Get vertex colors (atom types)
         vertex_colors = [atom.GetSymbol() for atom in mol.GetAtoms()]
         
-        # Get edges and edge colors
         edges = []
         edge_colors = []
+        
+        # Identify aromatic rings using RDKit's built-in aromaticity detection
+        aromatic_atoms = set(atom.GetIdx() for atom in mol.GetAtoms() if atom.GetIsAromatic())
+        
         for bond in mol.GetBonds():
             begin_idx = bond.GetBeginAtomIdx()
             end_idx = bond.GetEndAtomIdx()
             edges.append((begin_idx, end_idx))
-            edge_colors.append(EdgeType.from_rdkit_bond(bond).value)
             
+            # Match Go implementation's aromatic bond detection
+            if (begin_idx in aromatic_atoms and 
+                end_idx in aromatic_atoms and 
+                bond.GetIsAromatic()):
+                edge_colors.append(EdgeType.AROMATIC.value)
+            else:
+                edge_colors.append(EdgeType.from_rdkit_bond(bond).value)
+                
         return Graph(
             vertices=vertices,
             edges=edges,
