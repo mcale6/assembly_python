@@ -2,9 +2,8 @@ from typing import List
 import argparse
 import sys
 from pathlib import Path
-from assembly_python.utils.graph import Graph
-from assembly_python.utils.pathway import Pathway, format_pathway_output
-from assembly_python.utils.molecules import MoleculeHandler
+from assembly_python.common.graph import Graph
+from assembly_python.common.pathway import Pathway, format_pathway_output
 from assembly_python.algorithms.assembly_search import (
     extend_pathway_shortest,
     extend_pathway_all_shortest,
@@ -16,9 +15,9 @@ def process_input_file(file_path: str) -> Graph:
     ext = Path(file_path).suffix.lower()[1:]  # Remove dot from extension
     
     handlers = {
-        'mol': MoleculeHandler.from_mol_file,
-        'sdf': MoleculeHandler.from_sdf_file,
-        'txt': Graph.from_file  # Added support for text graph format
+        'mol': Graph.from_mol,
+        'sdf': Graph.from_sdf,
+        'txt': Graph.from_file
     }
     
     if ext not in handlers:
@@ -36,13 +35,11 @@ def process_input_file(file_path: str) -> Graph:
 
 def assembly(graph: Graph, variant: str = "shortest") -> List[Pathway]:
     """Main assembly algorithm."""
-    if not graph.vertices or not graph.edges:
-        raise ValueError("Invalid graph: Must have vertices and edges")
         
     if variant not in {"shortest", "all_shortest", "all"}:
         raise ValueError(f"Invalid variant: {variant}")
         
-    # Initialize with empty pathway but proper remnant
+    # Initialize empty pathway
     init_pathway = Pathway(
         pathway=[],
         remnant=graph.copy(),
@@ -52,7 +49,7 @@ def assembly(graph: Graph, variant: str = "shortest") -> List[Pathway]:
     
     best_pathways = [init_pathway]
     
-    # Map variant to appropriate algorithm
+    # Map variant to algorithm
     algorithm_map = {
         "shortest": extend_pathway_shortest,
         "all_shortest": extend_pathway_all_shortest,

@@ -1,6 +1,5 @@
-from assembly_python.utils.molecules import MoleculeHandler
-from assembly_python.utils.graph import Graph
-from assembly_python.algorithms.canonical import graph_is_isomorphic
+from assembly_python.common.graph import Graph
+from assembly_python.algorithms.assembly_search import assembly
 
 def test_isomorphism():
     # Test 1: Simple path graphs with same colors
@@ -18,7 +17,7 @@ def test_isomorphism():
         edge_colors=['single', 'double']
     )
 
-    print("Test 1 - Same colored paths:", graph_is_isomorphic(g1, g2))  # True
+    print("Test 1 - Same colored paths:", g1.is_isomorphic(g2))  # True
 
     # Test 2: Different vertex colors
     g3 = Graph(
@@ -28,7 +27,7 @@ def test_isomorphism():
         edge_colors=['single', 'double']
     )
 
-    print("Test 2 - Different colors:", graph_is_isomorphic(g1, g3))  # False
+    print("Test 2 - Different colors:", g1.is_isomorphic(g3))  # False
 
     # Test 3: Same colors and isomorphic topology (path vs. star are isomorphic for 3 nodes)
     g4 = Graph(
@@ -38,7 +37,7 @@ def test_isomorphism():
         edge_colors=['single', 'double']
     )
 
-    print("Test 3 - Different but isomorphic topology:", graph_is_isomorphic(g1, g4))  # True
+    print("Test 3 - Different but isomorphic topology:", g1.is_isomorphic(g4))  # True
 
     # Test 4: Same structure and colors in different order
     g5 = Graph(
@@ -48,7 +47,7 @@ def test_isomorphism():
         edge_colors=['double', 'single']
     )
 
-    print("Test 4 - Reversed edges:", graph_is_isomorphic(g1, g5))  # True
+    print("Test 4 - Reversed edges:", g1.is_isomorphic(g5))  # True
 
     # Test 5: Cyclic vs linear (non-isomorphic)
     g6 = Graph(
@@ -58,7 +57,7 @@ def test_isomorphism():
         edge_colors=['single', 'double', 'single']
     )
 
-    print("Test 5 - Cyclic vs linear:", graph_is_isomorphic(g1, g6))  # False
+    print("Test 5 - Cyclic vs linear:", g1.is_isomorphic(g6))  # False
 
 def test_molecule_handler():
     """Test the MoleculeHandler with various inputs."""
@@ -128,7 +127,82 @@ M  END"""
     except ValueError as e:
         print(f"Error: {e}")
 
+def test_aspirin_assembly():
+    """Test that aspirin assembly matches Go implementation."""
+    # Create aspirin graph
+    graph = MoleculeHandler.from_inchi(
+        "InChI=1S/C9H8O4/c1-6(10)13-8-5-3-2-4-7(8)9(11)12/h2-5H,1H3,(H,11,12)"
+    )
+    
+    # Run assembly
+    pathways = assembly(graph, variant="shortest")
+    
+    # Verify results match Go implementation
+    assert len(pathways) == 1
+    pathway = pathways[0]
+    
+    # Check assembly index
+    assert assembly_index(pathway, graph) == 8
+    
+    # Check number of fragments
+    assert len(pathway.pathway) == 3
+    
+    # Check duplicates found
+    assert len(pathway.duplicates) == 3
+    
+    # Verify specific fragment structures
+    fragments = pathway.pathway
+    
+    # Fragment 1: 3-carbon fragment
+    assert len(fragments[0].vertices) == 3
+    assert len(fragments[0].edges) == 2
+    
+    # Fragment 2: 4-atom fragment with oxygens
+    assert len(fragments[1].vertices) == 4
+    assert len(fragments[1].edges) == 3
+    
+    # Fragment 3: 3-carbon fragment
+    assert len(fragments[2].vertices) == 3
+    assert len(fragments[2].edges) == 2
+
+def test_matching_go_cases():
+    """Test additional cases from Go implementation."""
+    test_cases = [
+        ("testdata/graphs/square.txt", 2),
+        ("testdata/graphs/triangle.txt", 2),
+        ("testdata/graphs/hexagon.txt", 3),
+    ]
+    
+    for file_path, expected_index in test_cases:
+        graph = Graph.from_file(file_path)
+        pathways = assembly(graph, variant="shortest")
+        assert assembly_index(pathways[0], graph) == expected_index
+
+def test_edge_cases():
+    """Test edge cases from Go implementation."""
+    # Empty graph
+    graph = Graph(vertices=[], edges=[])
+    assembly(graph)
+        
+    # Single edge
+    graph = Graph(
+        vertices=[0, 1],
+        edges=[(0, 1)],
+        vertex_colors=['C', 'C'],
+        edge_colors=['single']
+    )
+    pathways = assembly(graph)
+    assert len(pathways) == 1
+    assert assembly_index(pathways[0], graph) == 0
+    
+    # Disconnected components
+    graph = Graph.from_file("testdata/graphs/disconnected.txt")
+    pathways = assembly(graph)
+    assert len(pathways[0].pathway) > 1  # Should find fragments
+
 
 if __name__ == "__main__":
     test_molecule_handler()
     test_isomorphism()
+    test_edge_cases()
+    test_matching_go_cases()

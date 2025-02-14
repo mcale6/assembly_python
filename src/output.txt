@@ -1,0 +1,899 @@
+./output.txt
+---
+
+
+---
+./assembly_python.egg-info/PKG-INFO
+---
+Metadata-Version: 2.2
+Name: assembly_python
+Version: 0.1.0
+Summary: Assembly Index calculation in Python
+Author: mcale6
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: rdkit>=2023.3
+Requires-Dist: numpy
+Dynamic: author
+Dynamic: description
+Dynamic: description-content-type
+Dynamic: requires-dist
+Dynamic: requires-python
+Dynamic: summary
+
+# assembly_python
+Calculating the Assembly Index in python, based on the go implementation of https://github.com/croningp/assembly_go
+
+
+---
+./assembly_python.egg-info/SOURCES.txt
+---
+LICENSE
+README.md
+setup.py
+src/assembly_python/__init__.py
+src/assembly_python/assembly.py
+src/assembly_python.egg-info/PKG-INFO
+src/assembly_python.egg-info/SOURCES.txt
+src/assembly_python.egg-info/dependency_links.txt
+src/assembly_python.egg-info/entry_points.txt
+src/assembly_python.egg-info/requires.txt
+src/assembly_python.egg-info/top_level.txt
+src/assembly_python/algorithms/__init__.py
+src/assembly_python/algorithms/assembly_search.py
+src/assembly_python/algorithms/common.py
+src/assembly_python/algorithms/duplicate_detection.py
+src/assembly_python/algorithms/substructure_matching.py
+src/assembly_python/tests/__init__.py
+src/assembly_python/tests/test.py
+
+---
+./assembly_python.egg-info/dependency_links.txt
+---
+
+
+
+---
+./assembly_python.egg-info/entry_points.txt
+---
+[console_scripts]
+assembly = assembly_python.assembly:main
+
+
+---
+./assembly_python.egg-info/requires.txt
+---
+rdkit>=2023.3
+numpy
+
+
+---
+./assembly_python.egg-info/top_level.txt
+---
+assembly_python
+
+
+---
+./assembly_python/__init__.py
+---
+
+
+---
+./assembly_python/assembly.py
+---
+from typing import List
+import argparse
+import sys
+from pathlib import Path
+from assembly_python.common.graph import Graph
+from assembly_python.common.pathway import Pathway, format_pathway_output
+from assembly_python.algorithms.assembly_search import (
+    extend_pathway_shortest,
+    extend_pathway_all_shortest,
+    extend_pathway_all,
+)
+
+def process_input_file(file_path: str) -> Graph:
+    """Process input file and return corresponding graph."""
+    ext = Path(file_path).suffix.lower()[1:]  # Remove dot from extension
+    
+    handlers = {
+        'mol': Graph.from_mol,
+        'sdf': Graph.from_sdf,
+        'txt': Graph.from_file
+    }
+    
+    if ext not in handlers:
+        raise ValueError(f"Unsupported file format: {ext}")
+        
+    graph = handlers[ext](file_path)
+    
+    # Handle SDF files which return list of graphs
+    if isinstance(graph, list):
+        if not graph:
+            raise ValueError("No valid molecules found in input file")
+        graph = graph[0]
+        
+    return graph
+
+def assembly(graph: Graph, variant: str = "shortest") -> List[Pathway]:
+    """Main assembly algorithm."""
+        
+    if variant not in {"shortest", "all_shortest", "all"}:
+        raise ValueError(f"Invalid variant: {variant}")
+        
+    # Initialize empty pathway
+    init_pathway = Pathway(
+        pathway=[],
+        remnant=graph.copy(),
+        duplicates=[],
+        atom_equivalences=[]
+    )
+    
+    best_pathways = [init_pathway]
+    
+    # Map variant to algorithm
+    algorithm_map = {
+        "shortest": extend_pathway_shortest,
+        "all_shortest": extend_pathway_all_shortest,
+        "all": extend_pathway_all
+    }
+    
+    extend_pathway = algorithm_map[variant]
+    extend_pathway(init_pathway, best_pathways, graph)
+    
+    return best_pathways
+
+def main() -> None:
+    """Main entry point for CLI."""
+    parser = argparse.ArgumentParser(description='Calculate Assembly Index for molecules')
+    parser.add_argument('input_file', help='Input file path')
+    parser.add_argument('--variant', default='shortest', choices=['shortest', 'all_shortest', 'all'],  help='Algorithm variant (default: shortest)')
+    parser.add_argument('--verbose', '-v', action='store_true', help='Output detailed pathway information')
+    
+    args = parser.parse_args()
+    
+    try:
+        # Process input and run assembly
+        graph = process_input_file(args.input_file)
+        pathways = assembly(graph, variant=args.variant)
+        
+        if not pathways:
+            print("No valid pathways found", file=sys.stderr)
+            sys.exit(1)
+            
+        # Use format_pathway_output from pathway.py
+        print(format_pathway_output(pathways[0], graph, args.verbose))
+        
+    except FileNotFoundError:
+        print(f"Error: File not found - {args.input_file}", file=sys.stderr)
+        sys.exit(1)
+    except ValueError as e:
+        print(f"Error: {str(e)}", file=sys.stderr)
+        sys.exit(1)
+    except Exception as e:
+        print(f"Error: Unexpected error - {str(e)}", file=sys.stderr)
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()
+
+---
+./assembly_python/algorithms/__init__.py
+---
+from .assembly_search import (
+    extend_pathway_shortest,
+    extend_pathway_all_shortest,
+    extend_pathway_all
+)
+
+__all__ = [
+    "extend_pathway_shortest",
+    "extend_pathway_all_shortest", 
+    "extend_pathway_all",
+]
+
+---
+./assembly_python/algorithms/assembly_search.py
+---
+from typing import List
+from assembly_python.common.graph import Graph
+from assembly_python.common.pathway import Pathway
+from assembly_python.algorithms.substructure_matching import identify_matching_substructures
+
+def extend_pathway_shortest(current_pathway: Pathway,
+                          best_pathways: List[Pathway],
+                          original_graph: Graph) -> None:
+    """Find shortest assembly pathway."""
+    if best_pathways and best_pathways[0].assembly_index(original_graph) <= Pathway.best_assembly_index(original_graph, current_pathway):
+        return
+        
+    new_pathways = identify_matching_substructures(current_pathway, original_graph)
+    
+    for new_pathway in new_pathways:
+        if not best_pathways or new_pathway.assembly_index(original_graph) < best_pathways[0].assembly_index(original_graph):
+            best_pathways.clear()
+            best_pathways.append(new_pathway)
+        extend_pathway_shortest(new_pathway, best_pathways, original_graph)
+
+def extend_pathway_all_shortest(current_pathway: Pathway,
+                              best_pathways: List[Pathway],
+                              original_graph: Graph) -> None:
+    """Find all shortest assembly pathways."""
+    if best_pathways and best_pathways[0].assembly_index(original_graph) < current_pathway.assembly_index(original_graph):
+        return
+        
+    new_pathways = identify_matching_substructures(current_pathway, original_graph)
+    
+    for new_pathway in new_pathways:
+        new_index = new_pathway.assembly_index(original_graph)
+        
+        if not best_pathways:
+            best_pathways.append(new_pathway)
+        elif new_index < best_pathways[0].assembly_index(original_graph):
+            best_pathways.clear()
+            best_pathways.append(new_pathway)
+        elif new_index == best_pathways[0].assembly_index(original_graph):
+            best_pathways.append(new_pathway)
+            
+        extend_pathway_all_shortest(new_pathway, best_pathways, original_graph)
+
+def extend_pathway_all(current_pathway: Pathway,
+                      all_pathways: List[Pathway],
+                      original_graph: Graph) -> None:
+    """Find all possible assembly pathways."""
+    new_pathways = identify_matching_substructures(current_pathway, original_graph)
+    
+    for new_pathway in new_pathways:
+        all_pathways.append(new_pathway)
+        extend_pathway_all(new_pathway, all_pathways, original_graph)
+
+---
+./assembly_python/algorithms/substructure_matching.py
+---
+from typing import List, Set
+import networkx as nx  
+from assembly_python.common.graph import Graph
+from assembly_python.common.pathway import Pathway
+
+def identify_matching_substructures(current_pathway: Pathway, original_graph: Graph) -> List[Pathway]:
+    """Find all matching substructures and create new pathways."""
+    new_pathways = []
+    remnant = current_pathway.remnant
+    
+    # Get edge adjacencies like Go
+    edge_adjacencies = {}
+    edge_list = list(remnant.graph.edges())
+    for i, (v1, v2) in enumerate(edge_list):
+        adj = []
+        for j, (u1, u2) in enumerate(edge_list):
+            if i != j and (v1 in (u1, u2) or v2 in (u1, u2)):
+                adj.append(j)
+        edge_adjacencies[i] = sorted(adj)
+    
+    # For each starting edge
+    for start_edge_idx in range(len(edge_list)):
+        # Track edges in current subgraph
+        sub_edges = [start_edge_idx]
+        forbidden = {}  # edges we've tried
+        
+        while True:
+            # Try to grow subgraph
+            found_neighbor = False
+            for edge_idx in sub_edges:
+                for adj_edge_idx in edge_adjacencies[edge_idx]:
+                    if not forbidden.get(adj_edge_idx, False) and adj_edge_idx not in sub_edges:
+                        # Found new edge to add
+                        sub_edges.append(adj_edge_idx)
+                        found_neighbor = True
+                        
+                        # Get subgraph from these edges
+                        sub_edge_pairs = [edge_list[i] for i in sub_edges]
+                        nodes = set()
+                        for e in sub_edge_pairs:
+                            nodes.add(e[0])
+                            nodes.add(e[1])
+                        subgraph = Graph(remnant.graph.subgraph(nodes))
+                        
+                        # Look for matches
+                        matcher = nx.algorithms.isomorphism.GraphMatcher(
+                            remnant.graph, subgraph.graph,
+                            node_match=lambda n1, n2: n1.get('color') == n2.get('color'),
+                            edge_match=lambda e1, e2: e1.get('color') == e2.get('color')
+                        )
+                        
+                        # Check each match
+                        for mapping in matcher.subgraph_isomorphisms_iter():
+                            matched_nodes = set(mapping.values())
+                            if not matched_nodes.intersection(nodes):
+                                new_pathway = current_pathway.create_with_duplication(
+                                    subgraph,
+                                    Graph(remnant.graph.subgraph(matched_nodes))
+                                )
+                                new_pathways.append(new_pathway)
+                        break
+                if found_neighbor:
+                    break
+            
+            if not found_neighbor:
+                # Backtrack
+                if not sub_edges:
+                    break
+                last_edge = sub_edges.pop()
+                forbidden[last_edge] = True
+    
+    return new_pathways
+
+
+---
+./assembly_python/tests/__init__.py
+---
+
+
+---
+./assembly_python/tests/aspirin.mol
+---
+BENZOIC ACID, 2-(ACETYLOXY)-, ID: C50782
+  NIST    15052607512D 1   1.00000     0.00000      
+Copyright by the U.S. Sec. Commerce on behalf of U.S.A. All rights reserved.
+ 13 13  0     0  0              1 V2000
+    1.7434    1.4944    0.0000 C   0  0  0  0  0  0           0  0  0
+    1.7434    0.4981    0.0000 C   0  0  0  0  0  0           0  0  0
+    0.8966    1.9925    0.0000 C   0  0  0  0  0  0           0  0  0
+    2.5902    1.9925    0.0000 O   0  0  0  0  0  0           0  0  0
+    0.8966    0.0000    0.0000 C   0  0  0  0  0  0           0  0  0
+    0.0000    1.4944    0.0000 C   0  0  0  0  0  0           0  0  0
+    0.8966    2.9887    0.0000 C   0  0  0  0  0  0           0  0  0
+    0.0000    0.4981    0.0000 C   0  0  0  0  0  0           0  0  0
+    0.0000    3.4869    0.0000 O   0  0  0  0  0  0           0  0  0
+    1.7434    3.4869    0.0000 O   0  0  0  0  0  0           0  0  0
+    3.4869    1.4944    0.0000 C   0  0  0  0  0  0           0  0  0
+    4.3337    1.9925    0.0000 O   0  0  0  0  0  0           0  0  0
+    3.4869    0.4981    0.0000 C   0  0  0  0  0  0           0  0  0
+  1  2  2  0     0  0
+  3  1  1  0     0  0
+  1  4  1  0     0  0
+  2  5  1  0     0  0
+  6  3  2  0     0  0
+  3  7  1  0     0  0
+  4 11  1  0     0  0
+  5  8  2  0     0  0
+  8  6  1  0     0  0
+  7  9  2  0     0  0
+  7 10  1  0     0  0
+ 11 12  2  0     0  0
+ 11 13  1  0     0  0
+M  END
+
+---
+./assembly_python/tests/test.py
+---
+from assembly_python.common.graph import Graph
+from assembly_python.algorithms.assembly_search import assembly
+
+def test_isomorphism():
+    # Test 1: Simple path graphs with same colors
+    g1 = Graph(
+        vertices=[0, 1, 2],
+        edges=[(0, 1), (1, 2)],
+        vertex_colors=['C', 'C', 'C'],
+        edge_colors=['single', 'double']
+    )
+
+    g2 = Graph(
+        vertices=[5, 6, 7],
+        edges=[(5, 6), (6, 7)],
+        vertex_colors=['C', 'C', 'C'],
+        edge_colors=['single', 'double']
+    )
+
+    print("Test 1 - Same colored paths:", g1.is_isomorphic(g2))  # True
+
+    # Test 2: Different vertex colors
+    g3 = Graph(
+        vertices=[0, 1, 2],
+        edges=[(0, 1), (1, 2)],
+        vertex_colors=['C', 'O', 'C'],
+        edge_colors=['single', 'double']
+    )
+
+    print("Test 2 - Different colors:", g1.is_isomorphic(g3))  # False
+
+    # Test 3: Same colors and isomorphic topology (path vs. star are isomorphic for 3 nodes)
+    g4 = Graph(
+        vertices=[0, 1, 2],
+        edges=[(0, 1), (0, 2)],
+        vertex_colors=['C', 'C', 'C'],
+        edge_colors=['single', 'double']
+    )
+
+    print("Test 3 - Different but isomorphic topology:", g1.is_isomorphic(g4))  # True
+
+    # Test 4: Same structure and colors in different order
+    g5 = Graph(
+        vertices=[7, 8, 9],
+        edges=[(8, 7), (9, 8)],
+        vertex_colors=['C', 'C', 'C'],
+        edge_colors=['double', 'single']
+    )
+
+    print("Test 4 - Reversed edges:", g1.is_isomorphic(g5))  # True
+
+    # Test 5: Cyclic vs linear (non-isomorphic)
+    g6 = Graph(
+        vertices=[0, 1, 2],
+        edges=[(0, 1), (1, 2), (2, 0)],
+        vertex_colors=['C', 'C', 'C'],
+        edge_colors=['single', 'double', 'single']
+    )
+
+    print("Test 5 - Cyclic vs linear:", g1.is_isomorphic(g6))  # False
+
+def test_molecule_handler():
+    """Test the MoleculeHandler with various inputs."""
+    print("Testing MoleculeHandler...")
+    
+    # Test SMILES input
+    print("\nTesting SMILES input (ethanol):")
+    try:
+        graph = MoleculeHandler.from_smiles("CCO")
+        print(f"Vertices: {graph.vertices}")
+        print(f"Edges: {graph.edges}")
+        print(f"Vertex colors: {graph.vertex_colors}")
+        print(f"Edge colors: {graph.edge_colors}")
+    except ValueError as e:
+        print(f"Error: {e}")
+    
+    # Test InChI input
+    print("\nTesting InChI input (aspirin):")
+    try:
+        graph = MoleculeHandler.from_inchi("InChI=1S/C9H8O4/c1-6(10)13-8-5-3-2-4-7(8)9(11)12/h2-5H,1H3,(H,11,12)")
+        print(f"Vertices: {graph.vertices}")
+        print(f"Edges: {graph.edges}")
+        print(f"Vertex colors: {graph.vertex_colors}")
+        print(f"Edge colors: {graph.edge_colors}")
+    except ValueError as e:
+        print(f"Error: {e}")
+    
+    # Test MOL block input (if you have a MOL block string)
+    print("\nTesting MOL block input (if available):")
+    mol_block = """BENZOIC ACID, 2-(ACETYLOXY)-, ID: C50782
+  NIST    15052607512D 1   1.00000     0.00000      
+Copyright by the U.S. Sec. Commerce on behalf of U.S.A. All rights reserved.
+ 13 13  0     0  0              1 V2000
+    1.7434    1.4944    0.0000 C   0  0  0  0  0  0           0  0  0
+    1.7434    0.4981    0.0000 C   0  0  0  0  0  0           0  0  0
+    0.8966    1.9925    0.0000 C   0  0  0  0  0  0           0  0  0
+    2.5902    1.9925    0.0000 O   0  0  0  0  0  0           0  0  0
+    0.8966    0.0000    0.0000 C   0  0  0  0  0  0           0  0  0
+    0.0000    1.4944    0.0000 C   0  0  0  0  0  0           0  0  0
+    0.8966    2.9887    0.0000 C   0  0  0  0  0  0           0  0  0
+    0.0000    0.4981    0.0000 C   0  0  0  0  0  0           0  0  0
+    0.0000    3.4869    0.0000 O   0  0  0  0  0  0           0  0  0
+    1.7434    3.4869    0.0000 O   0  0  0  0  0  0           0  0  0
+    3.4869    1.4944    0.0000 C   0  0  0  0  0  0           0  0  0
+    4.3337    1.9925    0.0000 O   0  0  0  0  0  0           0  0  0
+    3.4869    0.4981    0.0000 C   0  0  0  0  0  0           0  0  0
+  1  2  2  0     0  0
+  3  1  1  0     0  0
+  1  4  1  0     0  0
+  2  5  1  0     0  0
+  6  3  2  0     0  0
+  3  7  1  0     0  0
+  4 11  1  0     0  0
+  5  8  2  0     0  0
+  8  6  1  0     0  0
+  7  9  2  0     0  0
+  7 10  1  0     0  0
+ 11 12  2  0     0  0
+ 11 13  1  0     0  0
+M  END"""
+    try:
+        graph = MoleculeHandler.from_mol_block(mol_block)
+        print(f"Vertices: {graph.vertices}")
+        print(f"Edges: {graph.edges}")
+        print(f"Vertex colors: {graph.vertex_colors}")
+        print(f"Edge colors: {graph.edge_colors}")
+    except ValueError as e:
+        print(f"Error: {e}")
+
+def test_aspirin_assembly():
+    """Test that aspirin assembly matches Go implementation."""
+    # Create aspirin graph
+    graph = MoleculeHandler.from_inchi(
+        "InChI=1S/C9H8O4/c1-6(10)13-8-5-3-2-4-7(8)9(11)12/h2-5H,1H3,(H,11,12)"
+    )
+    
+    # Run assembly
+    pathways = assembly(graph, variant="shortest")
+    
+    # Verify results match Go implementation
+    assert len(pathways) == 1
+    pathway = pathways[0]
+    
+    # Check assembly index
+    assert assembly_index(pathway, graph) == 8
+    
+    # Check number of fragments
+    assert len(pathway.pathway) == 3
+    
+    # Check duplicates found
+    assert len(pathway.duplicates) == 3
+    
+    # Verify specific fragment structures
+    fragments = pathway.pathway
+    
+    # Fragment 1: 3-carbon fragment
+    assert len(fragments[0].vertices) == 3
+    assert len(fragments[0].edges) == 2
+    
+    # Fragment 2: 4-atom fragment with oxygens
+    assert len(fragments[1].vertices) == 4
+    assert len(fragments[1].edges) == 3
+    
+    # Fragment 3: 3-carbon fragment
+    assert len(fragments[2].vertices) == 3
+    assert len(fragments[2].edges) == 2
+
+def test_matching_go_cases():
+    """Test additional cases from Go implementation."""
+    test_cases = [
+        ("testdata/graphs/square.txt", 2),
+        ("testdata/graphs/triangle.txt", 2),
+        ("testdata/graphs/hexagon.txt", 3),
+    ]
+    
+    for file_path, expected_index in test_cases:
+        graph = Graph.from_file(file_path)
+        pathways = assembly(graph, variant="shortest")
+        assert assembly_index(pathways[0], graph) == expected_index
+
+def test_edge_cases():
+    """Test edge cases from Go implementation."""
+    # Empty graph
+    graph = Graph(vertices=[], edges=[])
+    assembly(graph)
+        
+    # Single edge
+    graph = Graph(
+        vertices=[0, 1],
+        edges=[(0, 1)],
+        vertex_colors=['C', 'C'],
+        edge_colors=['single']
+    )
+    pathways = assembly(graph)
+    assert len(pathways) == 1
+    assert assembly_index(pathways[0], graph) == 0
+    
+    # Disconnected components
+    graph = Graph.from_file("testdata/graphs/disconnected.txt")
+    pathways = assembly(graph)
+    assert len(pathways[0].pathway) > 1  # Should find fragments
+
+
+if __name__ == "__main__":
+    test_molecule_handler()
+    test_isomorphism()
+    test_edge_cases()
+    test_matching_go_cases()
+
+---
+./assembly_python/tests/utils.py
+---
+def create_test_graph(vertices, edges, vertex_colors, edge_colors) -> Graph:
+    """Create a test graph with the given properties."""
+    g = nx.Graph()
+    for v, color in zip(vertices, vertex_colors):
+        g.add_node(v, color=color)
+    for (v1, v2), color in zip(edges, edge_colors):
+        g.add_edge(v1, v2, color=color)
+    return Graph(g)
+
+def assert_graph_isomorphism(g1: Graph, g2: Graph, expected: bool):
+    """Assert that two graphs are (or are not) isomorphic."""
+    result = g1.is_isomorphic(g2)
+    assert result == expected, f"Expected isomorphism to be {expected}, got {result}" 
+
+---
+./assembly_python/common/graph.py
+---
+from typing import Set, Optional, List
+from dataclasses import dataclass
+from enum import Enum
+from rdkit import Chem
+import networkx as nx
+
+class EdgeType(Enum):
+    SINGLE = "single"
+    DOUBLE = "double" 
+    TRIPLE = "triple"
+    AROMATIC = "aromatic"
+    
+    @staticmethod
+    def from_rdkit_bond(bond: Chem.Bond) -> 'EdgeType':
+        """Convert RDKit bond type to our EdgeType."""
+        if bond.GetBondType() == Chem.BondType.SINGLE:
+            return EdgeType.SINGLE
+        elif bond.GetBondType() == Chem.BondType.DOUBLE:
+            return EdgeType.DOUBLE
+        elif bond.GetBondType() == Chem.BondType.TRIPLE:
+            return EdgeType.TRIPLE
+        elif bond.GetBondType() == Chem.BondType.AROMATIC:
+            return EdgeType.AROMATIC
+        else:
+            raise ValueError(f"Unsupported bond type: {bond.GetBondType()}")
+
+class Graph:
+    """NetworkX graph wrapper with chemical functionality."""
+    
+    def __init__(self, graph: Optional[nx.Graph] = None, edge_types: Optional[List[EdgeType]] = None):
+        """Initialize with optional existing NetworkX graph and edge types."""
+        self.graph = graph if graph is not None else nx.Graph()
+        self.edge_types = edge_types if edge_types is not None else [e for e in EdgeType]  # Default to all EdgeTypes
+    
+    @classmethod
+    def from_mol_file(cls, mol_file: str, edge_types: Optional[List[EdgeType]] = None) -> 'Graph':
+        """Create graph from MOL file with specified edge types."""
+        mol = Chem.MolFromMolFile(mol_file, sanitize=True)
+        if mol is None:
+            raise ValueError(f"Failed to read MOL file: {mol_file}")
+        return cls.from_rdkit_mol(mol, edge_types)
+    
+    @classmethod
+    def from_smiles(cls, smiles: str, edge_types: Optional[List[EdgeType]] = None) -> 'Graph':
+        """Create graph from SMILES string with specified edge types."""
+        mol = Chem.MolFromSmiles(smiles, sanitize=True)
+        if mol is None:
+            raise ValueError(f"Invalid SMILES: {smiles}")
+        return cls.from_rdkit_mol(mol, edge_types)
+    
+    @classmethod 
+    def from_inchi(cls, inchi: str, edge_types: Optional[List[EdgeType]] = None) -> 'Graph':
+        """Create graph from InChI string with specified edge types."""
+        mol = Chem.MolFromInchi(inchi, sanitize=True)
+        if mol is None:
+            raise ValueError(f"Invalid InChI: {inchi}")
+        return cls.from_rdkit_mol(mol, edge_types)
+    
+    @classmethod
+    def from_rdkit_mol(cls, mol: Chem.Mol, edge_types: Optional[List[EdgeType]] = None) -> 'Graph':
+        """Convert RDKit Mol object to Graph with specified edge types."""
+        graph = nx.Graph()
+        edge_types = edge_types if edge_types is not None else [e for e in EdgeType]  # Default to all EdgeTypes
+        
+        # Add atoms with attributes
+        for atom in mol.GetAtoms():
+            graph.add_node(atom.GetIdx(), 
+                         color=atom.GetSymbol(),
+                         aromatic=atom.GetIsAromatic())
+            
+        # Identify aromatic rings
+        aromatic_atoms = set(atom.GetIdx() for atom in mol.GetAtoms() 
+                            if atom.GetIsAromatic())
+        
+        # Add bonds with attributes, considering edge types
+        for bond in mol.GetBonds():
+            begin_idx = bond.GetBeginAtomIdx()
+            end_idx = bond.GetEndAtomIdx()
+            
+            # Determine bond type
+            bond_type = None
+            if (begin_idx in aromatic_atoms and 
+                end_idx in aromatic_atoms and 
+                bond.GetIsAromatic()):
+                bond_type = EdgeType.AROMATIC
+            else:
+                rdkit_bond_type = bond.GetBondType()
+                if rdkit_bond_type == Chem.BondType.SINGLE:
+                    bond_type = EdgeType.SINGLE
+                elif rdkit_bond_type == Chem.BondType.DOUBLE:
+                    bond_type = EdgeType.DOUBLE
+                elif rdkit_bond_type == Chem.BondType.TRIPLE:
+                    bond_type = EdgeType.TRIPLE
+
+            # Add edge only if its type is in the allowed edge_types
+            if bond_type in edge_types:
+                graph.add_edge(begin_idx, end_idx, color=bond_type.value)
+                
+        return cls(graph, edge_types)
+    
+    @classmethod
+    def from_sdf(cls, sdf_file: str, edge_types: Optional[List[EdgeType]] = None) -> List['Graph']:
+        """Create graphs from SDF file with specified edge types."""
+        supplier = Chem.SDMolSupplier(sdf_file, sanitize=True)
+        graphs = []
+        for i, mol in enumerate(supplier):
+            if mol is None:
+                print(f"Warning: Failed to read molecule {i} from SDF")
+                continue
+            graphs.append(cls.from_rdkit_mol(mol, edge_types))
+        return graphs
+    
+    @classmethod
+    def from_file(cls, path: str, edge_types: Optional[List[EdgeType]] = None) -> 'Graph':
+        """Read graph from text file with specified edge types."""
+        graph = nx.Graph()
+        with open(path) as f:
+            next(f)  # Skip name line
+            nodes = [int(x) for x in next(f).strip().split()]
+            graph.add_nodes_from(nodes)
+            
+            edge_line = next(f).strip().split()
+            edges = [(int(edge_line[i]), int(edge_line[i+1])) 
+                    for i in range(0, len(edge_line), 2)]
+            graph.add_edges_from(edges)
+            
+            vertex_colors = next(f).strip()
+            if vertex_colors!= "!":
+                for node, color in zip(nodes, vertex_colors.split()):
+                    graph.nodes[node]['color'] = color
+                    
+            edge_colors = next(f).strip()
+            if edge_colors!= "!":
+                for edge, color in zip(edges, edge_colors.split()):
+                    graph.edges[edge]['color'] = color
+                    
+        return cls(graph, edge_types)
+    
+    def copy(self) -> 'Graph':
+        """Create deep copy of graph."""
+        return Graph(self.graph.copy(), self.edge_types.copy())
+    
+    def __str__(self) -> str:
+        """String representation."""
+        output = []
+        nodes = list(self.graph.nodes())
+        edges = list(self.graph.edges())
+        output.append(f"Nodes: {nodes}")
+        output.append(f"Edges: {edges}")
+        colors = nx.get_node_attributes(self.graph, 'color')
+        if colors:
+            output.append(f"Node colors: {[colors.get(n) for n in nodes]}")
+        edge_colors = nx.get_edge_attributes(self.graph, 'color')
+        if edge_colors:
+            output.append(f"Edge colors: {[edge_colors.get(e) for e in edges]}")
+        return "\n".join(output)
+    
+    def create_matcher(self, other: 'Graph') -> nx.isomorphism.GraphMatcher:
+        """Create an isomorphism matcher between this graph and another."""
+        return nx.isomorphism.GraphMatcher(
+            self.graph,
+            other.graph,
+            node_match=lambda n1, n2: n1.get('color') == n2.get('color'),
+            edge_match=lambda e1, e2: e1.get('color') == e2.get('color')
+        )
+
+    def is_isomorphic(self, other: 'Graph') -> bool:
+        """Check if this graph is isomorphic to another graph."""
+        matcher = self.create_matcher(other)
+        return next(matcher.isomorphisms_iter(), None) is not None
+
+---
+./assembly_python/common/pathway.py
+---
+from dataclasses import dataclass, field
+from typing import List, Dict, Tuple, Set
+from assembly_python.common.graph import Graph
+
+@dataclass
+class Duplicates:
+    left: List[tuple]  # Edges in the fragment
+    right: List[tuple]  # Corresponding edges in remnant
+    atom_mapping: Dict[int, int]  # Maps fragment atoms to remnant atoms
+
+@dataclass
+class Pathway:
+    pathway: List[Graph]  # List of duplicated fragments
+    remnant: Graph       # Remaining structure
+    duplicates: List[Duplicates]  # List of duplicate records
+    atom_equivalences: List[Set[int]] = field(default_factory=list)  # Sets of equivalent atoms
+
+    def copy(self) -> 'Pathway':
+        """Create deep copy."""
+        return Pathway(
+            pathway=[Graph(g.graph.copy()) for g in self.pathway],
+            remnant=Graph(self.remnant.graph.copy()),
+            duplicates=[Duplicates(
+                left=d.left.copy(),
+                right=d.right.copy(),
+                atom_mapping=d.atom_mapping.copy()
+            ) for d in self.duplicates],
+            atom_equivalences=[s.copy() for s in self.atom_equivalences]
+        )
+
+    def update_atom_equivalences(self, new_mapping: Dict[int, int]) -> None:
+        """Update atom equivalences with new mapping."""
+        for atom1, atom2 in new_mapping.items():
+            found = False
+            for equiv_class in self.atom_equivalences:
+                if atom1 in equiv_class or atom2 in equiv_class:
+                    equiv_class.add(atom1)
+                    equiv_class.add(atom2)
+                    found = True
+                    break
+            if not found:
+                self.atom_equivalences.append({atom1, atom2})
+
+    def create_with_duplication(self, subgraph: Graph, matching_subgraph: Graph) -> 'Pathway':
+        """Create new pathway with duplication."""
+        new_pathway = self.copy()
+        new_pathway.pathway.append(subgraph)
+        
+        # Use the Graph's create_matcher method
+        matcher = matching_subgraph.create_matcher(subgraph)
+        mapping = next(matcher.isomorphisms_iter())
+        
+        # Create duplicate record
+        duplicate = Duplicates(
+            left=list(subgraph.graph.edges()),
+            right=[tuple(sorted([mapping[n1], mapping[n2]]))
+                  for n1, n2 in subgraph.graph.edges()],
+            atom_mapping=mapping
+        )
+        new_pathway.duplicates.append(duplicate)
+        
+        # Update remnant
+        new_remnant = new_pathway.remnant.graph.copy()
+        new_remnant.remove_edges_from(matching_subgraph.graph.edges())
+        new_pathway.remnant = Graph(new_remnant)
+        
+        # Update atom equivalences
+        new_pathway.update_atom_equivalences(mapping)
+        
+        return new_pathway
+
+    def assembly_index(self, original_graph: Graph) -> int:
+        """Calculate assembly index."""
+        remnant_edges = len(self.remnant.graph.edges())
+        pathway_edges = sum(len(fragment.graph.edges()) for fragment in self.pathway)
+        duplicated_edges = sum(len(dup.left) for dup in self.duplicates)
+        return remnant_edges + pathway_edges - duplicated_edges - 1
+
+    @staticmethod
+    def best_assembly_index(graph: Graph, current_pathway: 'Pathway') -> int:
+        """Calculate best possible assembly index."""
+        return len(graph.graph.edges()) - len(current_pathway.remnant.graph.edges())
+
+def format_pathway_output(pathway: Pathway, original_graph: Graph, verbose: bool = False) -> str:
+    """Format pathway for output."""
+    output = []
+    
+    # Original graph
+    output.append("Original Graph:")
+    output.append(str(original_graph))
+    output.append("")
+    
+    # Fragments
+    output.append("Pathway Fragments:")
+    for i, fragment in enumerate(pathway.pathway):
+        output.append(f"Fragment {i+1}:")
+        output.append(str(fragment))
+        output.append("")
+    
+    # Remnant
+    output.append("Remnant:")
+    output.append(str(pathway.remnant))
+    output.append("")
+    
+    # Duplicates
+    output.append("Duplicates:")
+    for i, duplicate in enumerate(pathway.duplicates):
+        output.append(f"Duplicate {i+1}:")
+        output.append(f"  Fragment edges: {duplicate.left}")
+        output.append(f"  Remnant edges: {duplicate.right}")
+        output.append(f"  Atom mapping: {duplicate.atom_mapping}")
+    output.append("")
+    
+    # Atom equivalences
+    output.append("Atom Equivalences:")
+    for i, equiv_class in enumerate(pathway.atom_equivalences):
+        output.append(f"Class {i+1}: {sorted(equiv_class)}")
+    output.append("")
+    
+    if verbose:
+        output.append(f"Assembly Index: {pathway.assembly_index(original_graph)}")
+    
+    return "\n".join(output)
+
+---
